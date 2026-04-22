@@ -1,0 +1,19 @@
+# ── API (HuggingFace Space deployment) ──────────────────────────────────────
+fastapi>=0.110.0
+uvicorn>=0.29.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# ── Frontend (Streamlit) ─────────────────────────────────────────────────────
+streamlit>=1.30.0
+plotly>=5.18.0
+fpdf2>=2.7.0
+requests>=2.31.0
+
+# ── Shared (models + scraping) ───────────────────────────────────────────────
+transformers>=4.38.0
+torch>=2.1.0
+sentencepiece>=0.1.99
+pandas>=2.0.0
+google-play-scraper>=1.2.0
+google-genai>=1.0.0
