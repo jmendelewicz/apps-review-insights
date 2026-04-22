@@ -1,3 +1,4 @@
+---
 title: Demo Smar Reviewer
 emoji: 🏆
 colorFrom: indigo
@@ -6,3 +7,4 @@ sdk: docker
 pinned: false
 license: mit
 short_description: Demo
+---
