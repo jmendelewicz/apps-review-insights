@@ -84,7 +84,7 @@ class GeminiFlashModel:
 
         # Keep truncation responsibility local (same as FLAN parity)
         joined = "\n".join(
-            f"- {r[:self.MAX_CHARS_PER_REVIEW].replace('\n', ' ')}"
+            "- " + r[:self.MAX_CHARS_PER_REVIEW].replace('\n', ' ')
             for r in reviews
         )
 
