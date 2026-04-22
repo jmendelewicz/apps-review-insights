@@ -92,3 +92,8 @@ dist/
 # Streamlit secrets
 # =========================
 .streamlit/
+
+# =========================
+# Claude cache
+# =========================
+.claude/
