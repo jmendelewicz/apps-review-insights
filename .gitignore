@@ -91,4 +91,4 @@ dist/
 # =========================
 # Streamlit secrets
 # =========================
-.streamlit/
+.streamlit/secrets.toml
