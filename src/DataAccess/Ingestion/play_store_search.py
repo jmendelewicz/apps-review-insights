@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 import re
 import urllib.parse
 from typing import Optional
 
 from google_play_scraper import app as gplay_app, search as gplay_search
 
+logger = logging.getLogger(__name__)
 
 _PACKAGE_ID_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+){1,}$", re.IGNORECASE)
 
@@ -21,7 +23,7 @@ def extract_app_id(text: str) -> Optional[str]:
             if candidate and _PACKAGE_ID_RE.match(candidate):
                 return candidate
         except Exception:
-            pass
+            logger.debug("parse_qs failed for %r", s, exc_info=True)
         m = re.search(r"[?&]id=([A-Za-z0-9._]+)", s)
         if m:
             return m.group(1)
@@ -30,27 +32,16 @@ def extract_app_id(text: str) -> Optional[str]:
     return None
 
 
-def _format_hit(hit: dict) -> dict:
+def _format_app_data(data: dict) -> dict:
+    """Normalize a google-play-scraper hit or app-info dict into our shape."""
     return {
-        "appId": hit.get("appId", ""),
-        "title": hit.get("title", ""),
-        "icon": hit.get("icon", ""),
-        "developer": hit.get("developer", ""),
-        "score": float(hit.get("score") or 0),
-        "installs": hit.get("installs", ""),
-        "genre": hit.get("genre", ""),
-    }
-
-
-def _format_info(info: dict) -> dict:
-    return {
-        "appId": info.get("appId", ""),
-        "title": info.get("title", ""),
-        "icon": info.get("icon", ""),
-        "developer": info.get("developer", ""),
-        "score": float(info.get("score") or 0),
-        "installs": info.get("installs", ""),
-        "genre": info.get("genre", ""),
+        "appId": data.get("appId", ""),
+        "title": data.get("title", ""),
+        "icon": data.get("icon", ""),
+        "developer": data.get("developer", ""),
+        "score": float(data.get("score") or 0),
+        "installs": data.get("installs", ""),
+        "genre": data.get("genre", ""),
     }
 
 
@@ -66,9 +57,11 @@ def resolve_query(
         for country in countries:
             try:
                 info = gplay_app(app_id, lang=lang, country=country)
-                return [_format_info(info)]
+                return [_format_app_data(info)]
             except Exception:
+                logger.debug("gplay_app failed for %s in %s", app_id, country, exc_info=True)
                 continue
+        # Unknown app id — return a placeholder so the caller can still proceed.
         return [{"appId": app_id, "title": app_id, "icon": "", "developer": "",
                  "score": 0.0, "installs": "", "genre": ""}]
 
@@ -78,12 +71,13 @@ def resolve_query(
         try:
             hits = gplay_search(query, lang=lang, country=country, n_hits=n_hits)
         except Exception:
+            logger.debug("gplay_search failed in %s", country, exc_info=True)
             continue
         for h in hits:
             aid = h.get("appId", "")
             if aid and aid not in seen:
                 seen.add(aid)
-                results.append(_format_hit(h))
+                results.append(_format_app_data(h))
         if len(results) >= n_hits:
             break
     return results[:n_hits]
@@ -93,7 +87,8 @@ def get_app_info(app_id: str, lang: str = "es", countries: Optional[list[str]] =
     countries = countries or ["us", "ar"]
     for country in countries:
         try:
-            return _format_info(gplay_app(app_id, lang=lang, country=country))
+            return _format_app_data(gplay_app(app_id, lang=lang, country=country))
         except Exception:
+            logger.debug("get_app_info failed for %s in %s", app_id, country, exc_info=True)
             continue
     return None

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from typing import Optional
@@ -9,7 +10,11 @@ import pandas as pd
 
 from constants import CONTENT_COL, SCORE_COL
 
+logger = logging.getLogger(__name__)
+
 GEMINI_MODEL = "gemini-2.5-flash"
+_RETRYABLE_CODES = ("429", "503", "500", "502", "504")
+_MAX_RETRIES = 3
 
 
 def _strip_json_fences(text: str) -> str:
@@ -17,6 +22,31 @@ def _strip_json_fences(text: str) -> str:
     if text.startswith("```"):
         text = re.sub(r"^```[a-z]*\n?", "", text).strip("`").strip()
     return text
+
+
+def _gemini_generate(client, prompt: str) -> str:
+    """Call Gemini with exponential backoff on transient errors."""
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+            return resp.text or ""
+        except Exception as exc:
+            last_exc = exc
+            msg = str(exc)
+            if not any(code in msg for code in _RETRYABLE_CODES):
+                raise
+            if attempt == _MAX_RETRIES - 1:
+                raise
+            backoff = 2 ** attempt
+            logger.warning(
+                "Gemini transient error (%d/%d): %s — retrying in %ds",
+                attempt + 1, _MAX_RETRIES, msg[:120], backoff,
+            )
+            time.sleep(backoff)
+    if last_exc:
+        raise last_exc
+    return ""
 
 
 def extract_topics_gemini(
@@ -42,10 +72,11 @@ def extract_topics_gemini(
         f"Reseñas:\n{reviews_text}"
     )
     try:
-        resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-        topics = json.loads(_strip_json_fences(resp.text))
+        raw = _gemini_generate(client, prompt)
+        topics = json.loads(_strip_json_fences(raw))
         return topics[:10] if isinstance(topics, list) else []
     except Exception:
+        logger.exception("extract_topics_gemini failed")
         return []
 
 
@@ -84,22 +115,19 @@ def generate_deep_analysis(
         f"- Temas principales: {topics_text}\n\n"
         f"## Muestra de reseñas POSITIVAS:\n{pos_text}\n\n"
         f"## Muestra de reseñas NEGATIVAS:\n{neg_text}\n\n"
-        f"Proporciona un análisis estructurado con estas secciones usando formato markdown:\n\n"
-        f"## Resumen Ejecutivo\n(2-3 párrafos con el estado general)\n\n"
-        f"## Fortalezas Principales\n(lista de puntos)\n\n"
-        f"## Problemas Críticos\n(lista con impacto)\n\n"
-        f"## Perfil del Usuario\n(qué tipo de usuarios)\n\n"
-        f"## Recomendaciones de Mejora\n(acciones concretas priorizadas)\n\n"
-        f"Responde en español. Sé específico y accionable."
+        f"Proporciona un análisis estructurado con EXACTAMENTE estas 5 secciones usando formato markdown.\n"
+        f"IMPORTANTE: NO agregues título principal, preámbulo, ni secciones adicionales. "
+        f"Empezá directamente con '## Resumen Ejecutivo'.\n\n"
+        f"## Resumen Ejecutivo\n(2-3 párrafos con el estado general; la primera oración debe ser la conclusión más accionable)\n\n"
+        f"## Fortalezas Principales\n(lista de puntos concretos, cada uno con impacto concreto)\n\n"
+        f"## Problemas Críticos\n(lista priorizada por impacto: Alto/Medio/Bajo al inicio de cada punto)\n\n"
+        f"## Perfil del Usuario\n(qué tipo de usuarios predominan y qué buscan)\n\n"
+        f"## Recomendaciones de Mejora\n(acciones concretas priorizadas, numeradas)\n\n"
+        f"Responde en español. Sé específico y accionable. No incluyas otra sección."
     )
 
-    for attempt in range(3):
-        try:
-            resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-            return resp.text
-        except Exception as e:
-            if "503" in str(e) and attempt < 2:
-                time.sleep(3 * (attempt + 1))
-                continue
-            return f"Error al generar análisis: {str(e)[:200]}"
-    return ""
+    try:
+        return _gemini_generate(client, prompt)
+    except Exception as e:
+        logger.exception("generate_deep_analysis failed")
+        return f"Error al generar análisis: {str(e)[:200]}"

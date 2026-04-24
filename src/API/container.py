@@ -88,16 +88,25 @@ class Container:
 
     def summarization_model(self) -> GeminiFlashModel:
         """
-        Gemini = remote inference → lightweight initialization
+        Gemini = remote inference → lightweight initialization.
+
+        Accepts either GEMINI_API_KEY (preferred, matches frontend) or
+        GOOGLE_API_KEY (legacy) so both deployments work without changes.
         """
         print("Resolving GeminiFlashModel...")
-        print("GOOGLE_API_KEY =", os.getenv("GOOGLE_API_KEY"))
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         return self._get(
             "summarization_model",
-            lambda: GeminiFlashModel(
-                api_key=os.getenv("GOOGLE_API_KEY")
-                )
+            lambda: GeminiFlashModel(api_key=api_key),
         )
+
+    # ------------------------------------------------------------------
+    # Introspection
+    # ------------------------------------------------------------------
+
+    def is_loaded(self, key: str) -> bool:
+        """Public check for whether a singleton has been instantiated yet."""
+        return key in self._instances
 
     # ------------------------------------------------------------------
     # Service Layer

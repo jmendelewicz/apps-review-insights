@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile src/app.py src/API/container.py src/API/review_api.py src/Models/gemini_analyzer.py src/Models/gemini_flash_model.py src/Models/sentiment_client.py src/Models/text_analysis.py src/Models/nlptown_bert_base_model.py src/Orchestration/google_play_service.py src/Orchestration/review_stats.py src/DataAccess/Ingestion/google_play_wrapper.py src/DataAccess/Ingestion/play_store_search.py src/DataAccess/Refinary/google_review_cleaner.py src/DataAccess/Storage/report_exporter.py src/constants.py)",
+      "Bash(python -m py_compile src/app.py src/Models/gemini_analyzer.py)",
+      "Bash(python -m py_compile src/app.py)"
+    ]
+  }
+}

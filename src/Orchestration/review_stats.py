@@ -36,13 +36,13 @@ class ReviewStats:
         avg_score = (
             to_float(df[review_columns.SCORE_COL].mean())
             if review_columns.SCORE_COL in df.columns and total > 0
-            else "N/A"
+            else None
         )
 
         avg_likes = (
             to_float(df[review_columns.LIKES_COL].mean())
             if review_columns.LIKES_COL in df.columns and total > 0
-            else "N/A"
+            else None
         )
 
         return cls(

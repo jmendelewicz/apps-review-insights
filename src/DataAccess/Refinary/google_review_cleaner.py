@@ -18,9 +18,14 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     Filters short/empty reviews and coerces column types without stripping
     display characters (preserves emojis and punctuation for UI rendering).
     """
-    df = df.dropna(subset=[review_columns.CONTENT_COL])
+    if df is None or df.empty or review_columns.CONTENT_COL not in df.columns:
+        return pd.DataFrame() if df is None else df.reset_index(drop=True)
+
+    # Work on an explicit copy to avoid SettingWithCopyWarning when filtering.
+    df = df.dropna(subset=[review_columns.CONTENT_COL]).copy()
     df[review_columns.CONTENT_COL] = df[review_columns.CONTENT_COL].astype(str).str.strip()
-    df = df[df[review_columns.CONTENT_COL].str.len() > 5]
+    df = df[df[review_columns.CONTENT_COL].str.len() > 5].copy()
+
     if review_columns.LIKES_COL in df.columns:
         df[review_columns.LIKES_COL] = (
             pd.to_numeric(df[review_columns.LIKES_COL], errors="coerce").fillna(0).astype(int)
@@ -45,19 +50,19 @@ class GoogleReviewCleaner:
         - Elimina caracteres no deseados (ej. emojis, saltos de línea).
         - Normaliza espacios.
         """
-        # Eliminar filas sin texto o con texto muy corto
-        reviews = reviews.dropna(subset=[review_columns.CONTENT_COL])
-        reviews[review_columns.CONTENT_COL] = reviews[review_columns.CONTENT_COL].astype(str).str.strip()
-        reviews = reviews[reviews[review_columns.CONTENT_COL].str.len() > 5]
+        if reviews is None or reviews.empty or review_columns.CONTENT_COL not in reviews.columns:
+            return reviews if reviews is not None else pd.DataFrame()
 
-        # Limpiar texto: eliminar emojis, saltos de línea, etc.
-        def clean_text(text):
-            text = re.sub(r'\s+', ' ', text)  # Normalizar espacios
-            text = re.sub(r'[^\w\s.,!?]', '', text)  # Eliminar caracteres no deseados
+        reviews = reviews.dropna(subset=[review_columns.CONTENT_COL]).copy()
+        reviews[review_columns.CONTENT_COL] = reviews[review_columns.CONTENT_COL].astype(str).str.strip()
+        reviews = reviews[reviews[review_columns.CONTENT_COL].str.len() > 5].copy()
+
+        def clean_text(text: str) -> str:
+            text = re.sub(r'\s+', ' ', text)
+            text = re.sub(r'[^\w\s.,!?]', '', text)
             return text.strip()
 
         reviews[review_columns.CONTENT_COL] = reviews[review_columns.CONTENT_COL].apply(clean_text)
-        
         return reviews
 
     @staticmethod

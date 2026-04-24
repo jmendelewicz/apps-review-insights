@@ -62,8 +62,8 @@ class GooglePlayService:
         stats = ReviewStats.from_dataframe(reviews_df)
 
         #────────────────── SUMMARY ──────────────────
-        
-        summary = self.generate_summarey(reviews_df)
+
+        summary = self.generate_summary(reviews_df)
         
         #────────────────── FODA ──────────────────
 
@@ -90,7 +90,7 @@ class GooglePlayService:
 
         return result
 
-    def generate_summarey(self, reviews_df: pd.DataFrame) -> FeatureSummary:
+    def generate_summary(self, reviews_df: pd.DataFrame) -> FeatureSummary:
         weighted_positive_reviews = self.prepare_weighted_reviews(reviews_df, 
                                                                   Sentiments.POSITIVE.value)
         positive_features = self.summarization_model.extract_top_features(weighted_positive_reviews,

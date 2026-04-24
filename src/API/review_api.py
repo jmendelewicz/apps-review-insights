@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 load_dotenv()  # Load environment variables from .env file before container import
 
-from src.API.container import Container, get_container
+from src.API.container import Container
 
 
 # ---------------------------------------------------------------------------
@@ -22,13 +22,14 @@ from src.API.container import Container, get_container
 async def lifespan(app: FastAPI):
     container = Container()
 
-    # Warm up the model without blocking the event loop
-    loop = asyncio.get_event_loop()
+    # Warm up the model without blocking the event loop.
+    # Use get_running_loop (get_event_loop is deprecated in Python 3.10+).
+    loop = asyncio.get_running_loop()
     print("Starting model load...")
     await loop.run_in_executor(None, container.sentiment_model)
     print("Model loaded.")
     print("Starting Google Play service initialization...")
-    container.google_play_service()  # Pre-initialize service (optional) 
+    container.google_play_service()  # Pre-initialize service (optional)
     print("Google Play service initialized.")
     app.state.container = container
     yield
@@ -86,9 +87,9 @@ def run_pipeline(
     }
 
 @app.get("/ready")
-def ready(container: Container = Depends(get_container)):
-    is_ready = "sentiment_model" in container._instances
-    if not is_ready:
+def ready(request: Request):
+    container: Container = request.app.state.container
+    if not container.is_loaded("sentiment_model"):
         raise HTTPException(status_code=503, detail="Model not loaded yet")
     return {"status": "ready"}
 

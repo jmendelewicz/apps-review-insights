@@ -1,11 +1,19 @@
 from enum import StrEnum
 import json
+import logging
 import re
-from typing import Any, Any, List
+import time
+from typing import Any, List
 
 from google import genai
 
 from src.Orchestration.review_stats import ReviewStats
+
+logger = logging.getLogger(__name__)
+
+# Retry Gemini on transient errors (rate limits and server overload).
+_RETRYABLE_ERROR_CODES = ("429", "503", "500", "502", "504")
+_MAX_RETRIES = 3
 
 GEMINI_MODEL = "gemini-2.5-flash"
 
@@ -54,17 +62,38 @@ class GeminiFlashModel:
         prompt = self._build_summary_prompt(reviews, sentiment, top_n)
 
         try:
-            response = self.client.models.generate_content(
-                model=self.MODEL_NAME,
-                contents=prompt,
-            )
-
-            raw = response.text.strip()
-
+            raw = self._generate_with_retry(prompt)
             return self._summary_parse_output(raw, top_n)
-
         except Exception as e:
-            return [f"(Gemini error: {str(e)})"]
+            logger.exception("Gemini extract_top_features failed")
+            return [f"(Gemini error: {str(e)[:200]})"]
+
+    def _generate_with_retry(self, prompt: str) -> str:
+        """Call Gemini with exponential backoff on transient errors."""
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.MODEL_NAME,
+                    contents=prompt,
+                )
+                return (response.text or "").strip()
+            except Exception as exc:
+                last_exc = exc
+                msg = str(exc)
+                is_retryable = any(code in msg for code in _RETRYABLE_ERROR_CODES)
+                if not is_retryable or attempt == _MAX_RETRIES - 1:
+                    raise
+                backoff = 2 ** attempt
+                logger.warning(
+                    "Gemini transient error (attempt %d/%d): %s — retrying in %ds",
+                    attempt + 1, _MAX_RETRIES, msg[:120], backoff,
+                )
+                time.sleep(backoff)
+        # Defensive fallback; the loop always raises or returns above.
+        if last_exc:
+            raise last_exc
+        return ""
 
     # ─────────────────────────────────────────────
     # Prompts
@@ -143,7 +172,7 @@ class GeminiFlashModel:
         except json.JSONDecodeError:
             pass
 
-        return self._fallback_parse(raw, top_n)
+        return self._summary_fallback_parse(raw, top_n)
 
     def _summary_strip_code_fences(self, raw_text: str) -> str:
         if raw_text.startswith("```"):
@@ -198,16 +227,22 @@ class GeminiFlashModel:
         version_analysis: str,
         neutral_sample: str,
     ) -> str:
+        avg_score_line = (
+            f"{stats.avg_score:.2f}/5 ⭐" if stats.avg_score is not None else "N/A"
+        )
+        avg_likes_line = (
+            f"{stats.avg_likes:.1f}" if stats.avg_likes is not None else "N/A"
+        )
         return f"""Sos un consultor estratégico de producto digital. Con base en el análisis de {stats.total} reseñas de una aplicación móvil, generá un análisis FODA (SWOT) completo.
-    
+
     DATOS DE ENTRADA:
-    
+
     Distribución de sentimiento:
     - Positivas: {stats.pct_pos:.1f}% ({stats.count_pos} reseñas)
     - Negativas: {stats.pct_neg:.1f}% ({stats.count_neg} reseñas)
     - Neutrales: {stats.pct_neu:.1f}% ({stats.count_neu} reseñas)
-    - Score promedio: {stats.avg_score:.2f}/5 ⭐
-    - Likes promedio por reseña: {stats.avg_likes:.1f}
+    - Score promedio: {avg_score_line}
+    - Likes promedio por reseña: {avg_likes_line}
     
     🟢 Aspectos más elogiados:
     {chr(10).join(f'  {i+1}. {a}' for i, a in enumerate(praised))}
@@ -257,25 +292,22 @@ class GeminiFlashModel:
     # ── Llamado a la API y formateo de respuesta ───────────────────────────────────
     
     def call_foda_api(self, prompt: str) -> dict:
+        raw_text = ""
         try:
-            response = self.client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=prompt,
-            )
-    
-            raw_text = response.text.strip()
+            raw_text = self._generate_with_retry(prompt)
             if raw_text.startswith("```"):
                 raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
                 raw_text = re.sub(r"\s*```$", "", raw_text)
-    
+
             return json.loads(raw_text)
-    
+
         except json.JSONDecodeError:
-            print("  ⚠ Gemini no devolvió JSON válido para el FODA.")
-            return {"error": response.text[:500]}
-    
+            logger.warning("Gemini did not return valid JSON for FODA")
+            return {"error": (raw_text or "")[:500]}
+
         except Exception as e:
-            return {"error": str(e)}
+            logger.exception("Gemini FODA call failed")
+            return {"error": str(e)[:200]}
     
     
     # ── Orquestador (mantiene la firma pública original) ───────────────────────────
