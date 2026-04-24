@@ -152,7 +152,6 @@ st.markdown("""
         box-shadow: 0 4px 14px rgba(124,58,237,0.15); transform: translateY(-1px);
     }
     div[data-testid="stExpander"] summary {
-        font-family: 'Sora', 'Inter', sans-serif !important;
         font-weight: 700 !important; color: var(--violet-dark) !important;
         font-size: 1rem !important; padding: 0.85rem 1.1rem !important;
     }
